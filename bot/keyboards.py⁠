@@ -1,0 +1,14 @@
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+def main_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📋 Мои товары", callback_data="my_items")],
+        [InlineKeyboardButton(text="ℹ️ Помощь", callback_data="help")]
+    ])
+
+def item_control_keyboard(article: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📊 График цен", callback_data=f"chart_{article}")],
+        [InlineKeyboardButton(text="🗑 Удалить из отслеживания", callback_data=f"del_{article}")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="my_items")]
+    ])

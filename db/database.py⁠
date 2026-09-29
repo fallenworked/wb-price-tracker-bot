@@ -1,0 +1,92 @@
+import aiosqlite
+import logging
+from typing import List, Dict, Optional
+from config import DB_NAME
+
+class Database:
+    def __init__(self, db_path: str = DB_NAME):
+        self.db_path = db_path
+
+    async def init_db(self):
+        """Создание таблиц базы данных"""
+        async with aiosqlite.connect(self.db_path) as db:
+            # Таблица пользователей и их отслеживаний
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS trackings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    article INTEGER NOT NULL,
+                    title TEXT,
+                    target_price INTEGER,
+                    last_price INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, article)
+                )
+            """)
+            # Таблица истории цен
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS price_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    article INTEGER NOT NULL,
+                    price INTEGER NOT NULL,
+                    recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            await db.commit()
+            logging.info("База данных успешно инициализирована")
+
+    async def add_tracking(self, user_id: int, article: int, title: str, price: int):
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("""
+                INSERT INTO trackings (user_id, article, title, last_price)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id, article) DO UPDATE SET
+                    last_price = excluded.last_price
+            """, (user_id, article, title, price))
+            
+            await db.execute("""
+                INSERT INTO price_history (article, price)
+                VALUES (?, ?)
+            """, (article, price))
+            await db.commit()
+
+    async def get_user_trackings(self, user_id: int) -> List[Dict]:
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT * FROM trackings WHERE user_id = ?", (user_id,)) as cursor:
+                rows = await cursor.fetchall()
+                return [dict(row) for row in rows]
+
+    async def delete_tracking(self, user_id: int, article: int):
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("DELETE FROM trackings WHERE user_id = ? AND article = ?", (user_id, article))
+            await db.commit()
+
+    async def get_all_unique_articles(self) -> List[int]:
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute("SELECT DISTINCT article FROM trackings") as cursor:
+                rows = await cursor.fetchall()
+                return [row[0] for row in rows]
+
+    async def update_price_and_history(self, article: int, new_price: int):
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("UPDATE trackings SET last_price = ? WHERE article = ?", (new_price, article))
+            await db.execute("INSERT INTO price_history (article, price) VALUES (?, ?)", (article, new_price))
+            await db.commit()
+
+    async def get_subscribers_for_article(self, article: int) -> List[Dict]:
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT user_id, last_price, title FROM trackings WHERE article = ?", (article,)) as cursor:
+                rows = await cursor.fetchall()
+                return [dict(row) for row in rows]
+
+    async def get_price_history(self, article: int) -> List[Dict]:
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT price, recorded_at FROM price_history WHERE article = ? ORDER BY recorded_at ASC", 
+                (article,)
+            ) as cursor:
+                rows = await cursor.fetchall()
+                return [dict(row) for row in rows]
